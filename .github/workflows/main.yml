@@ -1,0 +1,45 @@
+name: Windows Desktop via Cloudflared
+on: workflow_dispatch
+
+jobs:
+  windows-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download Cloudflared
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
+        
+    - name: Enable RDP and configure
+      run: |
+        # Enable RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Create user for RDP access
+        $password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
+        New-LocalUser -Name "githubuser" -Password $Password -FullName "GitHub User" -Description "Temporary user for GitHub Actions"
+        Add-LocalGroupMember -Group "Administrators" -Member "githubuser"
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "githubuser"
+        
+    - name: Start RDP and create tunnel
+      run: |
+        # Start cloudflared tunnel for RDP (port 3389)
+        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url rdp://localhost:3389" -NoNewWindow
+        
+        # Wait a bit for tunnel to establish
+        Start-Sleep -Seconds 10
+        
+    - name: Keep runner alive and display info
+      run: |
+        Write-Host "Windows RDP environment is starting..."
+        Write-Host "Check the workflow logs for the Cloudflared tunnel URL"
+        Write-Host "Username: githubuser"
+        Write-Host "Password: Password123!"
+        
+        # Keep the runner alive
+        Start-Sleep -Seconds 28800  # 8 hours
