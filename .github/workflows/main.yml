@@ -1,4 +1,4 @@
-name: Windows Desktop via Cloudflared
+name: Windows Desktop with Stable Tunnel
 on: workflow_dispatch
 
 jobs:
@@ -14,32 +14,86 @@ jobs:
       run: |
         Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
         
-    - name: Enable RDP and configure
+    - name: Install and configure VNC Server
       run: |
-        # Enable RDP
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        # Download and install TightVNC
+        Invoke-WebRequest -Uri "https://www.tightvnc.com/download/2.8.59/tightvnc-2.8.59-gpl-setup-64bit.msi" -OutFile "tightvnc.msi"
+        Start-Process msiexec -ArgumentList "/i tightvnc.msi /quiet /norestart ADDLOCAL=Server" -Wait
         
-        # Create user for RDP access
-        $password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
-        New-LocalUser -Name "githubuser" -Password $Password -FullName "GitHub User" -Description "Temporary user for GitHub Actions"
-        Add-LocalGroupMember -Group "Administrators" -Member "githubuser"
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "githubuser"
+        # Configure VNC password
+        & "C:\Program Files\TightVNC\tvnserver.exe" -controlservice -password vncpassword123
+        & "C:\Program Files\TightVNC\tvnserver.exe" -start
         
-    - name: Start RDP and create tunnel
+    - name: Start Cloudflared tunnel with retry logic
       run: |
-        # Start cloudflared tunnel for RDP (port 3389)
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url rdp://localhost:3389" -NoNewWindow
+        $tunnelScript = @"
+        `$retryCount = 0
+        `$maxRetries = 10
         
-        # Wait a bit for tunnel to establish
-        Start-Sleep -Seconds 10
+        while (`$retryCount -lt `$maxRetries) {
+            try {
+                Write-Host "Attempting to start tunnel (Attempt `$(`$retryCount + 1))"
+                & ".\cloudflared.exe" tunnel --url http://localhost:5800 --logfile cloudflared.log
+            }
+            catch {
+                Write-Host "Tunnel failed, retrying in 10 seconds..."
+                Start-Sleep -Seconds 10
+                `$retryCount++
+            }
+        }
+        Write-Host "Max retries reached, tunnel failed to stabilize"
+        "@
         
-    - name: Keep runner alive and display info
+        $tunnelScript | Out-File -FilePath "start_tunnel.ps1" -Encoding ASCII
+        Start-Process -FilePath "powershell" -ArgumentList "-File start_tunnel.ps1" -NoNewWindow
+        
+    - name: Start VNC Web Interface (noVNC)
       run: |
-        Write-Host "Windows RDP environment is starting..."
-        Write-Host "Check the workflow logs for the Cloudflared tunnel URL"
-        Write-Host "Username: githubuser"
-        Write-Host "Password: Password123!"
+        # Download and setup noVNC for web-based VNC access
+        Invoke-WebRequest -Uri "https://github.com/novnc/noVNC/archive/refs/heads/master.zip" -OutFile "novnc.zip"
+        Expand-Archive -Path "novnc.zip" -DestinationPath ".\novnc" -Force
         
-        # Keep the runner alive
-        Start-Sleep -Seconds 28800  # 8 hours
+        # Start websockify proxy for VNC
+        python -m pip install websockify
+        Start-Process -FilePath "python" -ArgumentList "-m websockify 5800 localhost:5900" -NoNewWindow
+        
+    - name: Start additional HTTP server for status
+      run: |
+        # Create status page
+        $statusPage = @"
+        <html>
+        <head><title>Windows Remote Desktop</title></head>
+        <body>
+            <h1>Windows Desktop Ready</h1>
+            <p>VNC Server: localhost:5900</p>
+            <p>Web VNC: localhost:5800</p>
+            <p>Password: vncpassword123</p>
+            <p><a href="/vnc.html">Open VNC Client</a></p>
+        </body>
+        </html>
+        "@
+        
+        $statusPage | Out-File -FilePath "status.html" -Encoding ASCII
+        
+        # Start simple HTTP server
+        Start-Process -FilePath "python" -ArgumentList "-m http.server 8000" -NoNewWindow
+        
+    - name: Monitor and keep alive
+      run: |
+        Write-Host "Windows desktop environment starting..."
+        Write-Host "VNC Password: vncpassword123"
+        Write-Host "Waiting for Cloudflared tunnel to establish..."
+        
+        # Wait for cloudflared to generate logs
+        Start-Sleep -Seconds 30
+        
+        # Display tunnel info if available
+        if (Test-Path "cloudflared.log") {
+            Get-Content "cloudflared.log" -Tail 10
+        }
+        
+        # Keep alive for 6 hours
+        for ($i = 0; $i -lt 2160; $i++) {
+            Write-Host "Running... $(Get-Date)"
+            Start-Sleep -Seconds 10
+        }
