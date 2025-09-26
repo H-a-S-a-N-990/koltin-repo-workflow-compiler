@@ -1,99 +1,45 @@
-name: Windows Desktop with Stable Tunnel
-on: workflow_dispatch
+name: Build VCMP Kotlin Plugin
+
+on:
+  workflow_dispatch: # Run manually from GitHub Actions tab
 
 jobs:
-  windows-desktop:
-    runs-on: windows-latest
-    timeout-minutes: 360
-    
+  build:
+    runs-on: ubuntu-18.04
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Download Cloudflared
+    - name: Checkout vcmp-java-demo
       run: |
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
-        
-    - name: Install and configure VNC Server
+        git clone https://github.com/theKAKAN/vcmp-java-demo.git
+        cd vcmp-java-demo
+
+    - name: Install OpenJDK 8
       run: |
-        # Download and install TightVNC
-        Invoke-WebRequest -Uri "https://www.tightvnc.com/download/2.8.59/tightvnc-2.8.59-gpl-setup-64bit.msi" -OutFile "tightvnc.msi"
-        Start-Process msiexec -ArgumentList "/i tightvnc.msi /quiet /norestart ADDLOCAL=Server" -Wait
-        
-        # Configure VNC password
-        & "C:\Program Files\TightVNC\tvnserver.exe" -controlservice -password vncpassword123
-        & "C:\Program Files\TightVNC\tvnserver.exe" -start
-        
-    - name: Start Cloudflared tunnel with retry logic
+        sudo apt-get update
+        sudo apt-get install -y openjdk-8-jdk
+        java -version
+
+    - name: Set JAVA_HOME
+      run: echo "JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" >> $GITHUB_ENV
+
+    - name: Build with Gradle
+      working-directory: vcmp-java-demo
+      run: ./gradlew shadowJar
+
+    - name: Prepare download folder
       run: |
-        $tunnelScript = @"
-        `$retryCount = 0
-        `$maxRetries = 10
-        
-        while (`$retryCount -lt `$maxRetries) {
-            try {
-                Write-Host "Attempting to start tunnel (Attempt `$(`$retryCount + 1))"
-                & ".\cloudflared.exe" tunnel --url http://localhost:5800 --logfile cloudflared.log
-            }
-            catch {
-                Write-Host "Tunnel failed, retrying in 10 seconds..."
-                Start-Sleep -Seconds 10
-                `$retryCount++
-            }
-        }
-        Write-Host "Max retries reached, tunnel failed to stabilize"
-        "@
-        
-        $tunnelScript | Out-File -FilePath "start_tunnel.ps1" -Encoding ASCII
-        Start-Process -FilePath "powershell" -ArgumentList "-File start_tunnel.ps1" -NoNewWindow
-        
-    - name: Start VNC Web Interface (noVNC)
+        mkdir -p public
+        cp vcmp-java-demo/build/libs/*.jar public/
+
+    - name: Download cloudflared
       run: |
-        # Download and setup noVNC for web-based VNC access
-        Invoke-WebRequest -Uri "https://github.com/novnc/noVNC/archive/refs/heads/master.zip" -OutFile "novnc.zip"
-        Expand-Archive -Path "novnc.zip" -DestinationPath ".\novnc" -Force
-        
-        # Start websockify proxy for VNC
-        python -m pip install websockify
-        Start-Process -FilePath "python" -ArgumentList "-m websockify 5800 localhost:5900" -NoNewWindow
-        
-    - name: Start additional HTTP server for status
+        wget -q -nc https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
+        chmod +x cloudflared
+
+    - name: Start Web Server
       run: |
-        # Create status page
-        $statusPage = @"
-        <html>
-        <head><title>Windows Remote Desktop</title></head>
-        <body>
-            <h1>Windows Desktop Ready</h1>
-            <p>VNC Server: localhost:5900</p>
-            <p>Web VNC: localhost:5800</p>
-            <p>Password: vncpassword123</p>
-            <p><a href="/vnc.html">Open VNC Client</a></p>
-        </body>
-        </html>
-        "@
-        
-        $statusPage | Out-File -FilePath "status.html" -Encoding ASCII
-        
-        # Start simple HTTP server
-        Start-Process -FilePath "python" -ArgumentList "-m http.server 8000" -NoNewWindow
-        
-    - name: Monitor and keep alive
+        nohup python3 -m http.server 10000 --directory public &
+
+    - name: Start Cloudflared Tunnel
       run: |
-        Write-Host "Windows desktop environment starting..."
-        Write-Host "VNC Password: vncpassword123"
-        Write-Host "Waiting for Cloudflared tunnel to establish..."
-        
-        # Wait for cloudflared to generate logs
-        Start-Sleep -Seconds 30
-        
-        # Display tunnel info if available
-        if (Test-Path "cloudflared.log") {
-            Get-Content "cloudflared.log" -Tail 10
-        }
-        
-        # Keep alive for 6 hours
-        for ($i = 0; $i -lt 2160; $i++) {
-            Write-Host "Running... $(Get-Date)"
-            Start-Sleep -Seconds 10
-        }
+        ./cloudflared tunnel --url http://127.0.0.1:10000 --metrics localhost:45678
