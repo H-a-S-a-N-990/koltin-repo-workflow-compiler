@@ -1,7 +1,7 @@
 name: Build VCMP Java Demo (External Repo)
 
 on:
-  workflow_dispatch: # Run manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,11 +26,22 @@ jobs:
         java -version
         javac -version
 
+    # 🧩 Fix Gradle repositories: keep v04.thijn.ovh but add Maven Central
+    - name: Patch Gradle repositories
+      working-directory: vcmp-java-demo
+      run: |
+        echo "Ensuring Gradle has both v04.thijn.ovh and Maven Central..."
+        if ! grep -q "repo1.maven.org" build.gradle; then
+          sed -i '/repositories {/a\\t\tmavenCentral()' build.gradle
+        fi
+        echo "Repositories in use:"
+        grep -A5 "repositories" build.gradle || true
+
     - name: Build using Gradle wrapper
       working-directory: vcmp-java-demo
       run: |
         chmod +x gradlew
-        ./gradlew shadowJar
+        ./gradlew shadowJar --no-daemon --stacktrace
 
     - name: Upload built JAR as artifact
       uses: actions/upload-artifact@v4
