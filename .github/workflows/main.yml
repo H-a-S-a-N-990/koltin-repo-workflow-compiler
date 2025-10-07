@@ -1,45 +1,39 @@
-name: Build VCMP Kotlin Plugin
+name: Build VCMP Java Demo (External Repo)
 
 on:
-  workflow_dispatch: # Run manually from GitHub Actions tab
+  workflow_dispatch: # Run manually from the Actions tab
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout vcmp-java-demo
+    - name: Clone VCMP Java Demo repository
       run: |
         git clone https://github.com/theKAKAN/vcmp-java-demo.git
         cd vcmp-java-demo
+        echo "Repository cloned successfully."
 
-    - name: Install OpenJDK 8
+    - name: Set up Java 8 (JDK 8)
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'
+
+    - name: Verify Java versions
       run: |
-        sudo apt-get update
-        sudo apt-get install -y openjdk-8-jdk
+        echo "Checking Java runtime and compiler versions..."
         java -version
+        javac -version
 
-    - name: Set JAVA_HOME
-      run: echo "JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64" >> $GITHUB_ENV
-
-    - name: Build with Gradle
+    - name: Build using Gradle wrapper
       working-directory: vcmp-java-demo
-      run: ./gradlew shadowJar
-
-    - name: Prepare download folder
       run: |
-        mkdir -p public
-        cp vcmp-java-demo/build/libs/*.jar public/
+        chmod +x gradlew
+        ./gradlew shadowJar
 
-    - name: Download cloudflared
-      run: |
-        wget -q -nc https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
-        chmod +x cloudflared
-
-    - name: Start Web Server
-      run: |
-        nohup python3 -m http.server 10000 --directory public &
-
-    - name: Start Cloudflared Tunnel
-      run: |
-        ./cloudflared tunnel --url http://127.0.0.1:10000 --metrics localhost:45678
+    - name: Upload built JAR as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcmp-java-demo-jar
+        path: vcmp-java-demo/build/libs/*.jar
