@@ -1,50 +1,45 @@
-name: Build VCMP Java Demo (External Repo)
+name: Build VCMP Java Plugin
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     steps:
-    - name: Clone VCMP Java Demo repository
-      run: |
-        git clone https://github.com/theKAKAN/vcmp-java-demo.git
-        cd vcmp-java-demo
-        echo "Repository cloned successfully."
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Java 8 (JDK 8)
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '8'
+      - name: Clone VCMP Java Demo
+        run: |
+          git clone https://github.com/theKAKAN/vcmp-java-demo.git
+          cd vcmp-java-demo
+          ls -la
 
-    - name: Verify Java versions
-      run: |
-        echo "Checking Java runtime and compiler versions..."
-        java -version
-        javac -version
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '8'
 
-    # 🧩 Fix Gradle repositories: keep v04.thijn.ovh but add Maven Central
-    - name: Patch Gradle repositories
-      working-directory: vcmp-java-demo
-      run: |
-        echo "Ensuring Gradle has both v04.thijn.ovh and Maven Central..."
-        if ! grep -q "repo1.maven.org" build.gradle; then
-          sed -i '/repositories {/a\\t\tmavenCentral()' build.gradle
-        fi
-        echo "Repositories in use:"
-        grep -A5 "repositories" build.gradle || true
+      - name: Verify Java version
+        run: |
+          java -version
+          javac -version
 
-    - name: Build using Gradle wrapper
-      working-directory: vcmp-java-demo
-      run: |
-        chmod +x gradlew
-        ./gradlew shadowJar --no-daemon --stacktrace
+      - name: Download Dependencies
+        run: |
+          mkdir -p ~/.m2/repository/com/maxorator/vcmp/plugin
+          cd ~/.m2/repository/com/maxorator/vcmp/plugin
+          wget -r -np -nH --cut-dirs=4 -R "index.html*" https://v04.thijn.ovh/maven/com/maxorator/vcmp/plugin/
+          ls -R
 
-    - name: Upload built JAR as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: vcmp-java-demo-jar
-        path: vcmp-java-demo/build/libs/*.jar
+      - name: Build the Plugin
+        run: |
+          cd vcmp-java-demo
+          javac -cp ~/.m2/repository com/maxorator/vcmp/plugin/*.java -d bin
+          jar cf VCMPJavaDemo.jar -C bin .
+          ls -la
