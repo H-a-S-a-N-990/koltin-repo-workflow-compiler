@@ -23,12 +23,15 @@ jobs:
           cd vcmp-java-demo
           chmod +x ./gradlew
 
-      - name: Install OpenLogic JDK 8
-        run: |
-          wget https://builds.openlogic.com/downloadJDK/openlogic-openjdk/8u462-b08/openlogic-openjdk-8u462-b08-linux-x64-deb.deb -O jdk.deb
-          sudo dpkg -i jdk.deb
-          sudo apt-get install -f -y
-          java -version
+- name: Install OpenLogic JDK 8
+  run: |
+    wget https://builds.openlogic.com/downloadJDK/openlogic-openjdk/8u462-b08/openlogic-openjdk-8u462-b08-linux-x64-deb.deb -O jdk.deb
+    sudo dpkg -i jdk.deb
+    sudo apt-get install -f -y
+    export JAVA_HOME=/usr/lib/jvm/openlogic-openjdk-8u462-b08
+    export PATH=$JAVA_HOME/bin:$PATH
+    java -version
+    javac -version
 
       - name: Build shadow JAR
         run: |
