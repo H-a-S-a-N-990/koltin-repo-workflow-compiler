@@ -1,45 +1,42 @@
-name: Build VCMP Java Plugin
+name: Build VCMP Kotlin/Java Plugin
 
 on:
   push:
-  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout this repo (not needed if you clone inside)
+        uses: actions/checkout@v3
 
-      - name: Clone VCMP Java Demo
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y wget unzip
+
+      - name: Clone vcmp-java-demo
         run: |
           git clone https://github.com/theKAKAN/vcmp-java-demo.git
           cd vcmp-java-demo
-          ls -la
+          chmod +x ./gradlew
 
-      - name: Set up JDK 8
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '8'
-
-      - name: Verify Java version
+      - name: Install OpenLogic JDK 8
         run: |
+          wget https://builds.openlogic.com/downloadJDK/openlogic-openjdk/8u462-b08/openlogic-openjdk-8u462-b08-linux-x64-deb.deb -O jdk.deb
+          sudo dpkg -i jdk.deb
+          sudo apt-get install -f -y
           java -version
-          javac -version
 
-      - name: Download Dependencies
-        run: |
-          mkdir -p ~/.m2/repository/com/maxorator/vcmp/plugin
-          cd ~/.m2/repository/com/maxorator/vcmp/plugin
-          wget -r -np -nH --cut-dirs=4 -R "index.html*" https://v04.thijn.ovh/maven/com/maxorator/vcmp/plugin/
-          ls -R
-
-      - name: Build the Plugin
+      - name: Build shadow JAR
         run: |
           cd vcmp-java-demo
-          javac -cp ~/.m2/repository com/maxorator/vcmp/plugin/*.java -d bin
-          jar cf VCMPJavaDemo.jar -C bin .
-          ls -la
+          ./gradlew shadowJar
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: vcmp-plugin-jar
+          path: vcmp-java-demo/build/libs/*.jar
