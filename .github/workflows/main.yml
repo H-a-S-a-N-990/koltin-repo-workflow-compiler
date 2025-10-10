@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout this repo (not needed if you clone inside)
+      - name: Checkout this repo
         uses: actions/checkout@v3
 
       - name: Install dependencies
@@ -36,7 +36,7 @@ jobs:
           ./gradlew shadowJar
 
       - name: Upload JAR artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vcmp-plugin-jar
           path: vcmp-java-demo/build/libs/*.jar
