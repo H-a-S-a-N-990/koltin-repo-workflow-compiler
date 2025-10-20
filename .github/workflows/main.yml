@@ -1,45 +1,20 @@
-name: Build VCMP Kotlin/Java Plugin
+name: Find Email From Old Commits
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
-  build:
+  find-email:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout this repo
-        uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y wget unzip
-
-      - name: Clone vcmp-java-demo
-        run: |
-          git clone https://github.com/theKAKAN/vcmp-java-demo.git
-          cd vcmp-java-demo
-          chmod +x ./gradlew
-
-- name: Install OpenLogic JDK 8
-  run: |
-    wget https://builds.openlogic.com/downloadJDK/openlogic-openjdk/8u462-b08/openlogic-openjdk-8u462-b08-linux-x64-deb.deb -O jdk.deb
-    sudo dpkg -i jdk.deb
-    sudo apt-get install -f -y
-    export JAVA_HOME=/usr/lib/jvm/openlogic-openjdk-8u462-b08
-    export PATH=$JAVA_HOME/bin:$PATH
-    java -version
-    javac -version
-
-      - name: Build shadow JAR
-        run: |
-          cd vcmp-java-demo
-          ./gradlew shadowJar
-
-      - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+      - name: Checkout target repo
+        uses: actions/checkout@v4
         with:
-          name: vcmp-plugin-jar
-          path: vcmp-java-demo/build/libs/*.jar
+          repository: Hasan2arabic/Hasan2arabic.github.io   # ⬅️ replace this
+
+      - name: Extract commit emails
+        run: |
+          echo "Collecting commit emails..."
+          git log --format='%ae' | sort | uniq -c | sort -nr > emails.txt
+          echo "Most used email(s):"
+          cat emails.txt
